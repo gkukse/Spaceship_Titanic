@@ -50,18 +50,11 @@ def first_look(df: pd.DataFrame) -> None:
     print(f'Columns with all empty values {df.columns[df.isna().all(axis=0)].tolist()}')
     print(f'Dataset has {df.duplicated().sum()} duplicates')
 
-    return info_df
+    return info_df.T
 
 
     
-def remove_empty_rows(df: pd.DataFrame, exception_col: str):
-    """ Removing empty rows, where all rows must be empty, apart from exception columns, i.e. 'id' """
 
-    columns_to_check = [col for col in df.columns if col != exception_col]
-    non_empty_rows = df[columns_to_check].notna().any(axis=1)
-    df_filtered = df[non_empty_rows]
-
-    return df_filtered
 
 def distribution_check(df: pd.DataFrame) -> None:
     """Box plot graph for identifying numeric column outliers, normality of distribution."""
@@ -121,19 +114,23 @@ def dummy_columns(df, feature_list):
     return df
 
 def phi_corr_matrix(df, feature_list):
-    """ Phi correlation for binary features"""
-    phi_corr_matrix = pd.DataFrame(index=feature_list, columns=feature_list)
+    """Compute and visualize Phi correlation matrix for binary features"""
+    corr_matrix = pd.DataFrame(index=feature_list, columns=feature_list)
 
-    for feature1 in feature_list:
-        for feature2 in feature_list:
-            phi_corr_matrix.loc[feature1, feature2] = matthews_corrcoef(
-                df[feature1], df[feature2])
+    # Calculate correlation coefficients
+    for i in range(len(feature_list)):
+        for j in range(i, len(feature_list)):
+            feature1 = feature_list[i]
+            feature2 = feature_list[j]
+            corr_coef = matthews_corrcoef(df[feature1], df[feature2])
+            corr_matrix.loc[feature1, feature2] = corr_coef
 
-    thresholded_matrix = phi_corr_matrix[(
-        phi_corr_matrix <= (-1) * alpha) | (phi_corr_matrix >= alpha)]
+    # Filter to upper or lower triangular part based on the parameter
+    mask = np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+    filtered_matrix = corr_matrix.where(mask)
 
-    sns.heatmap(thresholded_matrix.astype(float),
-                annot=True, annot_kws={"size": 8}, cmap='rocket', fmt=".2f")
-    plt.title(
-        f'Phi correlation coefficient of Binary Attributes (Thresholds +/- {alpha})')
+    # Plot the correlation matrix
+    sns.heatmap(filtered_matrix.astype(float), annot=True, annot_kws={"size": 8},
+                cmap='rocket', fmt=".2f", vmin=-1, vmax=1)  # Adjust vmin and vmax as needed
+    plt.title(f'Phi Correlation Matrix of Binary Attributes')
     plt.show()
