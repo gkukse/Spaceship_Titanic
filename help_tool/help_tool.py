@@ -59,11 +59,10 @@ def cabin_split(df):
     df[['Deck', 'Deck_num', 'Side']] = df['Cabin'].str.split('/', expand=True)
 
     # Available Deck values are A-G, T
-    df['Deck'] = df['Deck'].replace({'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'T': -1})
+    df['Deck'] = df['Deck'].replace({'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'T': 8})
 
     # Side has only 2 values and will be updated to bool feature
-    df.loc[df['Side'] == 'S', 'Side_S'] = 1
-    df.loc[df['Side'] == 'P', 'Side_S'] = 0   
+    df['Side'] = (df['Side'] == 'S').astype(int) 
 
     for feature in ['Deck_num']:
         try:
@@ -71,7 +70,6 @@ def cabin_split(df):
         except: 
             df[feature] = df[feature].astype(float)
 
-    df.drop(columns=['Side'], inplace=True) 
     return df
 
 
@@ -242,4 +240,140 @@ def biserial_heatmap(df, continues_features, binary_features):
 
     plt.title("Biserial Correlation Heatmap")
 
+    plt.show()
+
+
+def confidence_intervals(data, type) -> None:
+    """Calculate Confidence Intervals for a given dataset."""
+
+    sample_mean = np.mean(data)
+
+    if type == 'Continuous':
+        # Continuous feature
+        # ddof=1 for sample standard deviation
+        sample_std = np.std(data, ddof=1)
+        critical_value = stats.norm.ppf((1 + confidence_level) / 2)
+
+    elif type == 'Discrete':
+        # Discrete feature
+        # Sample standard deviation for discrete data
+        sample_std = np.sqrt(np.sum((data - sample_mean)**2) / (len(data) - 1))
+        # t-distribution for discrete data
+        critical_value = stats.t.ppf(
+            (1 + confidence_level) / 2, df=len(data) - 1)
+
+    standard_error = sample_std / np.sqrt(len(data))
+    margin_of_error = critical_value * standard_error
+
+    lower_bound = sample_mean - margin_of_error
+    upper_bound = sample_mean + margin_of_error
+
+    print(f"Confidence Interval: [{lower_bound:.2f}, {upper_bound:.2f}]")
+
+def significance_t_test(df: pd.DataFrame, feature: str, change_feature: str,
+                        min_change_value: float, max_change_value: float) -> None:
+    """Perform a t-test (sample size is small or when 
+    the population standard deviation is unknown) and follows a normal distribution."""
+    t_stat, p_value = stats.ttest_ind(df[df[change_feature] == min_change_value][feature],
+                                      df[df[change_feature] == max_change_value][feature], equal_var=False)
+
+    if p_value < alpha:
+        print(
+            f'p-value = {p_value:.4f} between {feature} and {change_feature}. Reject null hypothesis')
+    else:
+        print(
+            f'p-value = {p_value:.4f} between {feature} and {change_feature}. Fail to reject null hypothesis')
+
+
+def feature_transpose(df, feature_list):
+    """ Transpose a few features into a new dataframe"""
+    thresholds = df[feature_list].T
+    thresholds.reset_index(inplace=True)
+    thresholds.columns = thresholds.iloc[0]
+    thresholds.drop(thresholds.index[0], inplace=True)
+
+    return thresholds
+
+
+def cross_val_thresholds(fold, X, y, thresholds_df, classifiers):
+    """ Cross validation with threshold adjustments """
+    kf = KFold(n_splits=fold)
+    # Initialize lists to store metric scores and confusion matrices
+    metric_scores = {metric: {clf_name: [] for clf_name in classifiers.keys(
+    )} for metric in ['accuracy', 'precision', 'recall', 'f1']}
+    confusion_matrices = {clf_name: np.zeros(
+        (2, 2)) for clf_name in classifiers.keys()}
+
+    for train_index, val_index in kf.split(X):
+        X_train_i, X_val = X.iloc[train_index], X.iloc[val_index]
+        y_train_i, y_val = y.iloc[train_index], y.iloc[val_index]
+
+        for clf_name, clf in classifiers.items():
+            clf.fit(X_train_i, y_train_i)
+
+            # Threshold update
+            # Assuming binary classification
+            scores = clf.predict_proba(X_val)[:, 1]
+            optimal_threshold = thresholds_df[clf_name].iloc[0]
+            y_pred = (scores > optimal_threshold).astype(int)
+
+            # Calculate metrics
+            metric_scores['accuracy'][clf_name].append(
+                accuracy_score(y_val, y_pred))
+            metric_scores['precision'][clf_name].append(
+                precision_score(y_val, y_pred))
+            metric_scores['recall'][clf_name].append(
+                recall_score(y_val, y_pred))
+            metric_scores['f1'][clf_name].append(f1_score(y_val, y_pred))
+
+            # Compute confusion matrix
+            cm = confusion_matrix(y_val, y_pred)
+            confusion_matrices[clf_name] += cm
+
+    # Calculate average scores
+    avg_metric_scores = {metric: {clf_name: np.mean(scores) for clf_name, scores in clf_scores.items(
+    )} for metric, clf_scores in metric_scores.items()}
+
+    # Average confusion matrices
+    avg_confusion_matrices = {
+        clf_name: matrix / fold for clf_name, matrix in confusion_matrices.items()}
+
+    cv_results = []
+    for clf_name, scores in avg_metric_scores['accuracy'].items():
+        cv_results.append({
+            'Classifier': classifiers[clf_name].__class__.__name__,
+            'CV Mean Accuracy': np.mean(scores),
+            'CV Mean Precision': np.mean(avg_metric_scores['precision'][clf_name]),
+            'CV Mean Recall': np.mean(avg_metric_scores['recall'][clf_name]),
+            'CV Mean F1': np.mean(avg_metric_scores['f1'][clf_name]),
+            'Confusion Matrix': avg_confusion_matrices[clf_name]
+        })
+
+    model_info = pd.DataFrame(cv_results)
+    return model_info
+
+def cross_validation_param(model_info):
+    """ Parameter heatmap """
+    heatmap_data = model_info
+
+    heatmap_data.set_index('Classifier', inplace=True)
+
+    sns.heatmap(heatmap_data, annot=True, fmt=".2f", linewidths=.5)
+    plt.title('Model Performance Metrics')
+    plt.show()
+
+
+def cross_validation_confusion_matrix(model_info):
+    """ Cross Validation Matrix """
+    f, ax = plt.subplots(2, 4, figsize=(15, 6))
+    ax = ax.flatten()
+
+    for i, row in model_info.iterrows():
+        cm = row['Confusion Matrix']
+        sns.heatmap(cm, ax=ax[i], annot=True, fmt='2.0f')
+        ax[i].set_title(f"Matrix for {row['Classifier']}")
+        ax[i].set_xlabel('Predicted Label')
+        ax[i].set_ylabel('True Label')
+
+    plt.subplots_adjust(hspace=0.5, wspace=0.5)
     plt.show()
