@@ -10,15 +10,15 @@ Dataset can be downloaded from [Kaggle](https://www.kaggle.com/competitions/spac
 ## Python Libraries
 
 This analysis was conducted using Python 3.11. The following packages were used:
-numpy=1.26.4
-pandas=2.2.1
-seaborn=0.13.2
-matplotlib=3.8.4
-scikit-learn=1.4.2
-shap=0.45.1
-lazypredict=0.2.12
-libxgboost=2.0.3
-lightgbm=4.3.0
+- numpy=1.26.4
+- pandas=2.2.1
+- seaborn=0.13.2
+- matplotlib=3.8.4
+- scikit-learn=1.4.2
+- shap=0.45.1
+- lazypredict=0.2.12
+- libxgboost=2.0.3
+- lightgbm=4.3.0
 
 
 
